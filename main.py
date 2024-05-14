@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import FastAPI
 from pydantic import BaseModel
 import asyncio
+from itertools import chain
 
 class VulnerablePackage(BaseModel):
     name: str
@@ -46,12 +47,8 @@ def get_versions_ubuntu(package_res, name) -> set[str]:
     ecosystem_specifics = [ecosystem.get('ecosystem_specific', []) for ecosystem in flatten(affected_packages)]
     binaries = [binary.get('binaries', []) for binary in ecosystem_specifics]
     versions_partitions = [package_version.get(name, []) for package_version in flatten(binaries)]
-    versions = flatten(versions_partitions)
+    versions = chain(versions_partitions)
     return set(versions)
 
 def flatten(list_of_lists):
-    return [
-        item
-        for list in list_of_lists
-        for item in list
-    ]
+    return list(chain.from_iterable(list_of_lists))
