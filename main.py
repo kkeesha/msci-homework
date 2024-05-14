@@ -2,11 +2,12 @@ import httpx
 from datetime import datetime
 from fastapi import FastAPI
 from pydantic import BaseModel
+import asyncio
 
 class VulnerablePackage(BaseModel):
     name: str
     versions: list[str]
-    timestamp: datetime
+    timestamp: str
 
 class Package(BaseModel):
     name: str
@@ -17,29 +18,40 @@ class VulnerableVersionsRequest(BaseModel):
 
 app = FastAPI()
 
+
 @app.get("/versions")
 async def get_vulnerable_versions(name: str):
     vulnerable_debian_package_request = VulnerableVersionsRequest(package=Package(name=name, ecosystem='Debian'))
     vulnerable_ubuntu_package_request = VulnerableVersionsRequest(package=Package(name=name, ecosystem='Ubuntu'))
+
     async with httpx.AsyncClient() as client:
-        debian_res = await client.post('https://api.osv.dev/v1/query', json=vulnerable_debian_package_request.model_dump())
-        ubuntu_res = await client.post('https://api.osv.dev/v1/query', json=vulnerable_ubuntu_package_request.model_dump())
+        debian_res, ubuntu_res = await asyncio.gather(client.post('https://api.osv.dev/v1/query', json=vulnerable_debian_package_request.model_dump()), 
+                                                      client.post('https://api.osv.dev/v1/query', json=vulnerable_ubuntu_package_request.model_dump()))
 
-    debian_versions = get_versions(debian_res)
-    ubuntu_versions = get_versions(ubuntu_res)
+    debian_versions = get_versions_debian(debian_res)
+    ubuntu_versions = get_versions_ubuntu(ubuntu_res, name)
     all_versions = sorted(debian_versions.union(ubuntu_versions))
-    return VulnerablePackage(name=name, timestamp=datetime.now(), versions=all_versions)
+    now = datetime.now()
 
-def get_versions(debian_res) -> set[str]:
-    affected_packages = [vuln['affected'] for vuln in debian_res.json().get('vulns', [])]
+    return VulnerablePackage(name=name, timestamp=now.strftime("%Y-%m-%d %H:%M:%S"), versions=all_versions)
+
+def get_versions_debian(package_res) -> set[str]:
+    affected_packages = [vuln['affected'] for vuln in package_res.json().get('vulns', [])]
     versions_partitions = [package.get('versions', []) for package in flatten(affected_packages)]
     versions = flatten(versions_partitions)
     return set(versions)
 
-#TODO better name for 'j'
-def flatten(list):
+def get_versions_ubuntu(package_res, name) -> set[str]:
+    affected_packages = [vuln['affected'] for vuln in package_res.json().get('vulns', [])]
+    ecosystem_specifics = [ecosystem.get('ecosystem_specific', []) for ecosystem in flatten(affected_packages)]
+    binaries = [binary.get('binaries', []) for binary in ecosystem_specifics]
+    versions_partitions = [package_version.get(name, []) for package_version in flatten(binaries)]
+    versions = flatten(versions_partitions)
+    return set(versions)
+
+def flatten(list_of_lists):
     return [
-    j
-    for partition in list
-    for j in partition
-]
+        item
+        for list in list_of_lists
+        for item in list
+    ]
