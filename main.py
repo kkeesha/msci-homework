@@ -47,8 +47,15 @@ def get_versions_ubuntu(package_res, name) -> set[str]:
     ecosystem_specifics = [ecosystem.get('ecosystem_specific', []) for ecosystem in flatten(affected_packages)]
     binaries = [binary.get('binaries', []) for binary in ecosystem_specifics]
     versions_partitions = [package_version.get(name, []) for package_version in flatten(binaries)]
-    versions = chain(versions_partitions)
+    versions = flatten(versions_partitions)
     return set(versions)
 
-def flatten(list_of_lists):
-    return list(chain.from_iterable(list_of_lists))
+def flatten(list_of_lists: list[list]):
+    result = []
+    for partition in list_of_lists:
+        if isinstance(partition, list):
+            for item in partition:
+                result.append(item)
+        else:
+            result.append(partition)
+    return result
